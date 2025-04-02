@@ -1,0 +1,57 @@
+.NormalModal {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.NormalModal.open {
+    opacity: 1;
+    pointer-events: all;
+}
+.NormalModalContent {
+    width: 50%;
+    background-color: #fff;
+    transition: right 0.3s ease-in-out;
+    border-radius: 5px;
+}
+@media(max-width:850px){
+    .NormalModalContent{
+        width: 70%;
+    }
+}
+@media(max-width:750px){
+    .NormalModalContent{
+        width: 75%;
+    }
+}
+@media(max-width:650px){
+    .NormalModalContent{
+        width: 80%;
+    }
+}
+@media(max-width:550px){
+    .NormalModalContent{
+        width: 85%;
+    }
+}
+@media(max-width:450px){
+    .NormalModalContent{
+        width: 90%;
+    }
+}
+@media(max-width:350px){
+    .NormalModalContent{
+        width: 95%;
+    }
+}
+@media(max-width:250px){
+    .NormalModalContent{
+        width: 98%;
+    }
+}

@@ -1,0 +1,60 @@
+.BigModal {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.BigModal.open {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.BigModalContent {
+    width: 85%;
+    background-color: #fff;
+    transition: right 0.3s ease-in-out;
+    border-radius: 5px;
+}
+
+@media(max-width:850px) {
+    .BigModalContent {
+        width: 90%;
+    }
+}
+
+@media(max-width:750px) {
+    .BigModalContent {
+        width: 92%;
+    }
+}
+
+@media(max-width:650px) {
+    .BigModalContent {
+        width: 96%;
+    }
+}
+
+@media(max-width:550px) {
+    .BigModalContent {
+        width: 97%;
+    }
+}
+
+@media(max-width:450px) {
+    .BigModalContent {
+        width: 98%;
+    }
+}
+
+@media(max-width:350px) {
+    .BigModalContent {
+        width: 99%;
+    }
+}

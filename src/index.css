@@ -1,0 +1,63 @@
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  font-family: "Philosopher", sans-serif;
+}
+
+.Container {
+  width: 1430px;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0 15px;
+}
+
+
+
+.Modal3Content {
+  width: 400px;
+  background-color: #fff;
+  transition: right 0.3s ease-in-out;
+  border-radius: 5px;
+}
+
+
+
+
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: white;
+}
+
+::-webkit-scrollbar-thumb {
+  background: black;
+  border-radius: 0px;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.Category__Wrapper {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  position: relative;
+  z-index: 4;
+  gap: 50px;
+}
+
+.Menu__Wrapper {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  position: relative;
+  z-index: 4;
+  gap: 30px;
+}

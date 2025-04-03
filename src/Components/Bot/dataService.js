@@ -1,4 +1,5 @@
 import axios from "axios";
+import Swal from "sweetalert2"; // Импортируем SweetAlert
 
 // API Конфигурация
 const API_KEY = "a9db6b712c1a40299e39d7266af5b2b3";
@@ -38,7 +39,14 @@ export const fetchHistoricalData = async (symbol, setCurrentPrices) => {
             times: data.map(candle => candle.datetime)
         };
     } catch (error) {
-        console.error(`❌ Ошибка получения данных для ${symbol}:`, error.message);
+        // Выводим ошибку через SweetAlert
+        Swal.fire({
+            icon: "error",
+            title: "Ошибка получения данных",
+            text: `Не удалось получить данные для ${symbol}: ${error.message}`,
+            confirmButtonText: "OK"
+        });
+
         return null;
     }
 };

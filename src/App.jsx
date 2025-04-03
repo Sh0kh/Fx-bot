@@ -5,13 +5,11 @@ import MainLayout from "./layouts/MainLayout";
 import Home from "./Pages/Home";
 import AdminLayout from "./layouts/AdminLayout";
 import ProtectedRoute from "./Components/ProtectedRoute"; // Импорт компонента защиты маршрутов
-import UI from "./Pages/UI";
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/example/UI" element={<UI />} />
         <Route path="/" element={<AppLayout />}>
           <Route
             element={

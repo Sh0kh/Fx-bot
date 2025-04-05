@@ -5,12 +5,10 @@ import { SMA, RSI, MACD, EMA, BollingerBands } from "technicalindicators";
 
 // Настройки API Binance
 const BINANCE_BASE_URL = "https://api.binance.com/api/v3";
-const INTERVAL = "15m";
-const H1_INTERVAL = "1h";
+const INTERVAL = "15m"; // В Binance используется 'm' вместо 'min'
 const LIMIT = 500;
-const MIN_SIGNAL_DURATION = 30 * 60 * 1000; // 30 минут
 
-// Важные новостные события
+// Важные новостные события (время UTC)
 const HIGH_IMPACT_NEWS = [
     { time: "12:30", title: "Изменение занятости в США (NonFarm Payrolls)" },
     { time: "14:00", title: "Решение FOMC по ставкам" },
@@ -27,20 +25,19 @@ const isHighImpactNewsTime = () => {
     return HIGH_IMPACT_NEWS.some(news => {
         const [newsHour, newsMinute] = news.time.split(':').map(Number);
         const diffMinutes = Math.abs((hours * 60 + minutes) - (newsHour * 60 + newsMinute));
-        return diffMinutes < 90;
+        return diffMinutes < 90; // 1.5 часа до и после новости
     });
 };
 
-// Конвертация формата символа
+// Конвертация формата символа из "BTC/USD" в формат Binance "BTCUSDT"
 const formatSymbolForBinance = (symbol) => {
     return symbol.replace("/", "").concat("T");
 };
 
-// Получение исторических данных
-export const fetchHistoricalData = async (symbol, interval = INTERVAL) => {
+export const fetchHistoricalData = async (symbol, setCurrentPrices) => {
     try {
         const binanceSymbol = formatSymbolForBinance(symbol);
-        const url = `${BINANCE_BASE_URL}/klines?symbol=${binanceSymbol}&interval=${interval}&limit=${LIMIT}`;
+        const url = `${BINANCE_BASE_URL}/klines?symbol=${binanceSymbol}&interval=${INTERVAL}&limit=${LIMIT}`;
         const response = await axios.get(url);
 
         if (!response.data || response.data.length < LIMIT * 0.8) {
@@ -49,12 +46,25 @@ export const fetchHistoricalData = async (symbol, interval = INTERVAL) => {
 
         const data = response.data;
 
+        const closes = data.map(candle => parseFloat(candle[4]));
+        const highs = data.map(candle => parseFloat(candle[2]));
+        const lows = data.map(candle => parseFloat(candle[3]));
+        const volumes = data.map(candle => parseFloat(candle[5]));
+        const times = data.map(candle => new Date(candle[0]).toISOString());
+
+        // Обновление текущей цены
+        setCurrentPrices(prev => ({
+            ...prev,
+            [symbol]: closes[closes.length - 1]
+        }));
+
         return {
-            closes: data.map(candle => parseFloat(candle[4])),
-            highs: data.map(candle => parseFloat(candle[2])),
-            lows: data.map(candle => parseFloat(candle[3])),
-            volumes: data.map(candle => parseFloat(candle[5])),
-            times: data.map(candle => new Date(candle[0]).toISOString())
+            symbol,
+            closes,
+            highs,
+            lows,
+            volumes,
+            times
         };
     } catch (error) {
         console.error(`Ошибка получения данных для ${symbol}:`, error);
@@ -62,7 +72,7 @@ export const fetchHistoricalData = async (symbol, interval = INTERVAL) => {
     }
 };
 
-// Получение текущей цены
+// Получение текущей цены для одного символа
 export const fetchCurrentPrice = async (symbol) => {
     try {
         const binanceSymbol = formatSymbolForBinance(symbol);
@@ -79,7 +89,6 @@ export const fetchCurrentPrice = async (symbol) => {
     }
 };
 
-// Расчет индикаторов
 const calculateIndicators = (data) => {
     if (!data) return null;
     const { closes, highs, lows, volumes } = data;
@@ -92,7 +101,7 @@ const calculateIndicators = (data) => {
 
         // Осцилляторы
         const rsi = RSI.calculate({ period: 14, values: closes });
-        const emaRsi = EMA.calculate({ period: 5, values: rsi });
+        const emaRsi = EMA.calculate({ period: 5, values: rsi }); // Сглаженный RSI
 
         const macd = MACD.calculate({
             fastPeriod: 16,
@@ -113,7 +122,7 @@ const calculateIndicators = (data) => {
         const currentVolume = volumes[volumes.length - 1];
         const isLowVolume = currentVolume < avgVolume * 0.7;
 
-        // Анализ свечных паттернов
+        // Анализ свечных паттернов (последние 3 свечи)
         const recentCloses = closes.slice(-3);
         const recentHighs = highs.slice(-3);
         const recentLows = lows.slice(-3);
@@ -121,6 +130,7 @@ const calculateIndicators = (data) => {
         let bullishCandles = 0;
         let bearishCandles = 0;
 
+        // Проверка бычьих и медвежьих свечей
         for (let i = 1; i < recentCloses.length; i++) {
             if (recentCloses[i] > recentCloses[i - 1]) bullishCandles++;
             if (recentCloses[i] < recentCloses[i - 1]) bearishCandles++;
@@ -142,13 +152,6 @@ const calculateIndicators = (data) => {
         if (bullishCandles >= 2 || (hasPinBar && lastCandle.close > lastCandle.open)) priceAction = "bullish";
         if (bearishCandles >= 2 || (hasPinBar && lastCandle.close < lastCandle.open)) priceAction = "bearish";
 
-        // Расчет волатильности
-        const changes = [];
-        for (let i = 1; i < closes.length; i++) {
-            changes.push(Math.abs(closes[i] - closes[i - 1]) / closes[i - 1]);
-        }
-        const volatility = changes.reduce((sum, change) => sum + change, 0) / changes.length;
-
         return {
             sma50: sma50[sma50.length - 1],
             sma200: sma200[sma200.length - 1],
@@ -160,9 +163,7 @@ const calculateIndicators = (data) => {
             priceAction,
             lastPrice: closes[closes.length - 1],
             isLowVolume,
-            hasPinBar,
-            volatility,
-            closes
+            hasPinBar
         };
     } catch (error) {
         console.error("Ошибка расчета индикаторов:", error);
@@ -170,20 +171,10 @@ const calculateIndicators = (data) => {
     }
 };
 
-// Анализ сигнала с учетом истории и мультитаймфреймов
-const analyzeEntry = (indicators, previousSignals, h1Indicators) => {
+const analyzeEntry = (indicators) => {
     if (!indicators) return { signal: "HOLD", conditionsMet: { bullish: 0, bearish: 0 } };
 
-    // Фильтр высокой волатильности
-    if (indicators.volatility > 0.03) {
-        return { signal: "HOLD", conditionsMet: { bullish: 0, bearish: 0 } };
-    }
-
-    // Получаем последние 3 сигнала для этого символа
-    const lastSignals = previousSignals
-        .filter(s => s.symbol === indicators.symbol)
-        .slice(-3)
-        .map(s => s.signalType);
+    const isLowVolume = indicators.isLowVolume;
 
     const {
         sma50,
@@ -199,57 +190,48 @@ const analyzeEntry = (indicators, previousSignals, h1Indicators) => {
 
     // Условия для ПОКУПКИ
     const bullishConditions = [
-        ema20 > sma50 && sma50 > sma200,
+        ema20 > sma50 && sma50 > sma200, // Ясный восходящий тренд
         lastPrice < bollingerBands.lower || (hasPinBar && priceAction === "bullish"),
-        emaRsi < 35,
-        macd.histogram > 0.3 && macd.MACD > macd.signal,
+        emaRsi < 35, // Используем сглаженный RSI
+        macd.histogram > 0.3 && macd.MACD > macd.signal, // Сильный MACD
         priceAction === "bullish",
-        lastPrice > ema20
+        lastPrice > ema20 // Цена выше EMA20
     ];
 
     // Условия для ПРОДАЖИ
     const bearishConditions = [
-        ema20 < sma50 && sma50 < sma200,
+        ema20 < sma50 && sma50 < sma200, // Ясный нисходящий тренд
         lastPrice > bollingerBands.upper || (hasPinBar && priceAction === "bearish"),
-        emaRsi > 65,
-        macd.histogram < -0.3 && macd.MACD < macd.signal,
+        emaRsi > 65, // Используем сглаженный RSI
+        macd.histogram < -0.3 && macd.MACD < macd.signal, // Сильный MACD
         priceAction === "bearish",
-        lastPrice < ema20
+        lastPrice < ema20 // Цена ниже EMA20
     ];
 
     const bullishScore = bullishConditions.filter(cond => cond).length;
     const bearishScore = bearishConditions.filter(cond => cond).length;
 
-    // Требуем подтверждения сигнала в 2 из последних 3 периодов
-    const requiredConfirmation = 2;
+    // Всегда возвращаем сигнал, даже если подтверждений мало
+    if (bullishScore > bearishScore) return {
+        signal: "BUY",
+        conditionsMet: {
+            bullish: bullishScore,
+            bearish: bearishScore,
+            total: 6
+        }
+    };
 
-    let finalSignal = "HOLD";
-    if (bullishScore > bearishScore) {
-        const confirmations = lastSignals.filter(s => s === "BUY").length;
-        if (confirmations >= requiredConfirmation || lastSignals.length < 3) {
-            finalSignal = "BUY";
+    if (bearishScore > bullishScore) return {
+        signal: "SELL",
+        conditionsMet: {
+            bullish: bullishScore,
+            bearish: bearishScore,
+            total: 6
         }
-    } else if (bearishScore > bullishScore) {
-        const confirmations = lastSignals.filter(s => s === "SELL").length;
-        if (confirmations >= requiredConfirmation || lastSignals.length < 3) {
-            finalSignal = "SELL";
-        }
-    }
-
-    // Фильтр по часовому таймфрейму
-    if (h1Indicators) {
-        const h1Trend = h1Indicators.ema20 > h1Indicators.sma50 ? "UP" : "DOWN";
-
-        if (finalSignal === "BUY" && h1Trend !== "UP") {
-            finalSignal = "HOLD";
-        }
-        if (finalSignal === "SELL" && h1Trend !== "DOWN") {
-            finalSignal = "HOLD";
-        }
-    }
+    };
 
     return {
-        signal: finalSignal,
+        signal: "HOLD",
         conditionsMet: {
             bullish: bullishScore,
             bearish: bearishScore,
@@ -258,7 +240,6 @@ const analyzeEntry = (indicators, previousSignals, h1Indicators) => {
     };
 };
 
-// Расчет уровня уверенности
 const calculateConfidenceLevel = (indicators, signal, conditionsMet) => {
     const {
         sma50,
@@ -283,35 +264,45 @@ const calculateConfidenceLevel = (indicators, signal, conditionsMet) => {
     };
 
     if (signal === "BUY") {
+        // Сила тренда
         if (ema20 > sma50 && sma50 > sma200) confidenceScore += weights.trend_strength;
         else if (ema20 > sma50) confidenceScore += weights.trend_strength * 0.7;
 
+        // Осцилляторы
         if (emaRsi < 30) confidenceScore += weights.oscillator;
         else if (emaRsi < 35) confidenceScore += weights.oscillator * 0.8;
 
+        // Волатильность
         if (lastPrice < bollingerBands.lower) confidenceScore += weights.volatility;
         else if (lastPrice < (bollingerBands.lower * 1.01)) confidenceScore += weights.volatility * 0.7;
 
+        // Моментум
         if (macd.histogram > 0.5 && macd.MACD > macd.signal) confidenceScore += weights.momentum;
         else if (macd.histogram > 0.3 && macd.MACD > macd.signal) confidenceScore += weights.momentum * 0.7;
 
+        // Ценовое действие
         if (hasPinBar && priceAction === "bullish") confidenceScore += weights.price_action;
         else if (priceAction === "bullish") confidenceScore += weights.price_action * 0.7;
     }
 
     if (signal === "SELL") {
+        // Сила тренда
         if (ema20 < sma50 && sma50 < sma200) confidenceScore += weights.trend_strength;
         else if (ema20 < sma50) confidenceScore += weights.trend_strength * 0.7;
 
+        // Осцилляторы
         if (emaRsi > 70) confidenceScore += weights.oscillator;
         else if (emaRsi > 65) confidenceScore += weights.oscillator * 0.8;
 
+        // Волатильность
         if (lastPrice > bollingerBands.upper) confidenceScore += weights.volatility;
         else if (lastPrice > (bollingerBands.upper * 0.99)) confidenceScore += weights.volatility * 0.7;
 
+        // Моментум
         if (macd.histogram < -0.5 && macd.MACD < macd.signal) confidenceScore += weights.momentum;
         else if (macd.histogram < -0.3 && macd.MACD < macd.signal) confidenceScore += weights.momentum * 0.7;
 
+        // Ценовое действие
         if (hasPinBar && priceAction === "bearish") confidenceScore += weights.price_action;
         else if (priceAction === "bearish") confidenceScore += weights.price_action * 0.7;
     }
@@ -319,6 +310,7 @@ const calculateConfidenceLevel = (indicators, signal, conditionsMet) => {
     const totalPossibleScore = Object.values(weights).reduce((sum, weight) => sum + weight, 0);
     const confidencePercentage = Math.min((confidenceScore / totalPossibleScore) * 100, 100);
 
+    // Включаем фактическое количество выполненных условий
     const activeCount = signal === "BUY" ? conditionsMet.bullish : conditionsMet.bearish;
 
     return {
@@ -333,75 +325,61 @@ const calculateConfidenceLevel = (indicators, signal, conditionsMet) => {
     };
 };
 
-// Расчет стоп-лосса и тейк-профита
 const calculateStopLossAndTakeProfit = (entryPrice, signal, symbol, volatility) => {
-    const stopPercentage = Math.max(volatility * 100 * 1.5, 1.5);
-    const targetPercentage = stopPercentage * 2;
+    // Для криптовалют используем процентные стопы вместо пунктов
+    const stopPercentage = volatility * 100 * 1.5; // 1.5x волатильности в процентах
+    const targetPercentage = stopPercentage * 2; // Соотношение риск:прибыль 1:2
+
+    // Минимальные значения стопов, чтобы избежать слишком узких стопов
+    const minimumStopPercentage = 1.5; // Минимум 1.5%
+    const actualStopPercentage = Math.max(stopPercentage, minimumStopPercentage);
+    const actualTargetPercentage = actualStopPercentage * 2;
 
     if (signal === "BUY") {
         return {
-            stopLoss: entryPrice * (1 - stopPercentage / 100),
-            takeProfit: entryPrice * (1 + targetPercentage / 100),
-            percentTarget: targetPercentage.toFixed(2),
-            stopPercentage: stopPercentage.toFixed(2)
+            stopLoss: entryPrice * (1 - actualStopPercentage / 100),
+            takeProfit: entryPrice * (1 + actualTargetPercentage / 100),
+            percentTarget: actualTargetPercentage.toFixed(2),
+            stopPercentage: actualStopPercentage.toFixed(2)
         };
     } else if (signal === "SELL") {
         return {
-            stopLoss: entryPrice * (1 + stopPercentage / 100),
-            takeProfit: entryPrice * (1 - targetPercentage / 100),
-            percentTarget: targetPercentage.toFixed(2),
-            stopPercentage: stopPercentage.toFixed(2)
+            stopLoss: entryPrice * (1 + actualStopPercentage / 100),
+            takeProfit: entryPrice * (1 - actualTargetPercentage / 100),
+            percentTarget: actualTargetPercentage.toFixed(2),
+            stopPercentage: actualStopPercentage.toFixed(2)
         };
     }
     return { stopLoss: 0, takeProfit: 0, percentTarget: 0, stopPercentage: 0 };
 };
 
-// Генерация сигналов
-export const generateSignals = async (symbol, setCurrentPrices, setSignals, signals, signalHistory) => {
+export const generateSignals = async (symbol, setCurrentPrices, setSignals) => {
     if (isHighImpactNewsTime()) {
         console.log(`Пропускаем ${symbol} из-за важных новостей`);
         return null;
     }
 
     try {
-        // Проверка минимальной продолжительности сигнала
-        const currentSignal = signals[symbol];
-        const now = new Date().getTime();
-
-        if (currentSignal && currentSignal.signalType !== "HOLD") {
-            const signalAge = now - new Date(currentSignal.timestamp).getTime();
-            if (signalAge < MIN_SIGNAL_DURATION) {
-                return currentSignal;
-            }
-        }
-
-        // Получение данных
+        // Сначала обновляем текущую цену
         const currentPrice = await fetchCurrentPrice(symbol);
         if (currentPrice) {
             setCurrentPrices(prev => ({ ...prev, [symbol]: currentPrice }));
         }
 
-        const [m15Data, h1Data] = await Promise.all([
-            fetchHistoricalData(symbol, INTERVAL),
-            fetchHistoricalData(symbol, H1_INTERVAL)
-        ]);
+        // Получаем исторические данные для анализа
+        const historicalData = await fetchHistoricalData(symbol, setCurrentPrices);
+        if (!historicalData) return null;
 
-        if (!m15Data) return null;
-
-        const indicators = calculateIndicators(m15Data);
+        const indicators = calculateIndicators(historicalData);
         if (!indicators) return null;
 
-        const h1Indicators = h1Data ? calculateIndicators(h1Data) : null;
-
-        indicators.symbol = symbol; // Добавляем symbol для анализа
-
-        const analysis = analyzeEntry(indicators, signalHistory, h1Indicators);
+        const analysis = analyzeEntry(indicators);
         const signalType = analysis.signal;
 
         const atr = Math.max(
-            Math.max(...m15Data.highs.slice(-14)) - Math.min(...m15Data.lows.slice(-14)),
+            Math.max(...historicalData.highs.slice(-14)) - Math.min(...historicalData.lows.slice(-14)),
             0.001
-        ) / indicators.lastPrice;
+        ) / indicators.lastPrice; // Нормализовано по цене для процентов
 
         const confidence = calculateConfidenceLevel(indicators, signalType, analysis.conditionsMet);
 
@@ -437,7 +415,7 @@ export const generateSignals = async (symbol, setCurrentPrices, setSignals, sign
             }
         };
 
-        // Добавление причин сигнала
+        // Добавляем причины сигнала
         if (signalType === "BUY") {
             if (indicators.ema20 > indicators.sma50 && indicators.sma50 > indicators.sma200)
                 signal.reasons.push("Сильный восходящий тренд (EMA20 > SMA50 > SMA200)");
@@ -469,8 +447,8 @@ export const generateSignals = async (symbol, setCurrentPrices, setSignals, sign
 
         setSignals(prev => ({ ...prev, [symbol]: signal }));
 
-        // Показываем уведомление для сильных сигналов
-        if (signalType !== "HOLD" && parseFloat(confidence.percentage) >= 60) {
+        // Показываем уведомление для сигналов с хотя бы 2 условиями
+        if (signalType !== "HOLD") {
             Swal.fire({
                 icon: "info",
                 title: `Новый сигнал ${signalType} для ${symbol}`,
@@ -498,16 +476,14 @@ export const generateSignals = async (symbol, setCurrentPrices, setSignals, sign
     }
 };
 
-// Основной компонент
 export const TradingSignals = ({ symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "SOL/USDT"] }) => {
     const [currentPrices, setCurrentPrices] = useState({});
     const [signals, setSignals] = useState({});
-    const [signalHistory, setSignalHistory] = useState([]);
     const [loading, setLoading] = useState({});
     const [lastUpdate, setLastUpdate] = useState(null);
     const [isNewsTime, setIsNewsTime] = useState(false);
 
-    // Проверка новостного периода
+    // Проверка новостного периода каждую минуту
     useEffect(() => {
         const checkNewsTime = () => {
             setIsNewsTime(isHighImpactNewsTime());
@@ -531,18 +507,8 @@ export const TradingSignals = ({ symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", 
 
         setLoading(prev => ({ ...prev, [symbol]: true }));
         try {
-            const signal = await generateSignals(
-                symbol,
-                setCurrentPrices,
-                setSignals,
-                signals,
-                signalHistory
-            );
-
-            if (signal) {
-                setSignalHistory(prev => [...prev.slice(-100), signal]);
-                setLastUpdate(new Date());
-            }
+            await generateSignals(symbol, setCurrentPrices, setSignals);
+            setLastUpdate(new Date());
         } catch (error) {
             console.error(`Ошибка анализа ${symbol}:`, error);
         } finally {
@@ -564,19 +530,7 @@ export const TradingSignals = ({ symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", 
         try {
             const promises = symbols.map(symbol => {
                 setLoading(prev => ({ ...prev, [symbol]: true }));
-                return generateSignals(
-                    symbol,
-                    setCurrentPrices,
-                    setSignals,
-                    signals,
-                    signalHistory
-                )
-                    .then(signal => {
-                        if (signal) {
-                            setSignalHistory(prev => [...prev.slice(-100), signal]);
-                        }
-                        return signal;
-                    })
+                return generateSignals(symbol, setCurrentPrices, setSignals)
                     .finally(() => setLoading(prev => ({ ...prev, [symbol]: false })));
             });
 
@@ -596,7 +550,7 @@ export const TradingSignals = ({ symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", 
         return () => clearInterval(interval);
     }, [isNewsTime]);
 
-    // Форматирование цены
+    // Форматирование цены в зависимости от типа криптовалюты
     const formatPrice = (symbol, price) => {
         if (!price) return '—';
 
@@ -639,8 +593,8 @@ export const TradingSignals = ({ symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", 
                     )}
                 </div>
                 <div className="text-sm text-gray-600">
-                    <p>Стратегия: Мультитаймфреймовый анализ (15m/1h), EMA20, SMA50/200, RSI, Полосы Боллинджера, MACD</p>
-                    <p>Управление рисками: Фильтр новостей, подтверждение сигналов, минимальная продолжительность 30 минут</p>
+                    <p>Стратегия: EMA20, SMA50/200, RSI, Полосы Боллинджера, MACD, Ценовое действие</p>
+                    <p>Управление рисками: соотношение риск/прибыль 1:2, новостной фильтр</p>
                 </div>
             </div>
 
@@ -700,7 +654,7 @@ export const TradingSignals = ({ symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", 
                                             <div className="mb-2">
                                                 <span className="text-sm font-medium">Уверенность: </span>
                                                 <span className={`text-sm ${signals[symbol].confidenceText === 'ВЫСОКИЙ' ? 'text-green-600' :
-                                                    signals[symbol].confidenceText === 'СРЕДНИЙ' ? 'text-yellow-600' : 'text-red-600'
+                                                        signals[symbol].confidenceText === 'СРЕДНИЙ' ? 'text-yellow-600' : 'text-red-600'
                                                     }`}>
                                                     {signals[symbol].confidenceText} ({signals[symbol].confidenceLevel}%)
                                                 </span>
@@ -709,7 +663,7 @@ export const TradingSignals = ({ symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", 
                                             <div className="mb-2">
                                                 <span className="text-sm font-medium">Рекомендация: </span>
                                                 <span className={`text-sm ${signals[symbol].recommendation.includes('СИЛЬНЫЙ') ? 'text-green-600' :
-                                                    signals[symbol].recommendation.includes('УМЕРЕННЫЙ') ? 'text-yellow-600' : 'text-red-600'
+                                                        signals[symbol].recommendation.includes('УМЕРЕННЫЙ') ? 'text-yellow-600' : 'text-red-600'
                                                     }`}>
                                                     {signals[symbol].recommendation}
                                                 </span>
@@ -758,8 +712,8 @@ export const TradingSignals = ({ symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", 
                         <div className="p-4 bg-gray-50 border-t border-gray-200">
                             <button
                                 onClick={() => analyzeSymbol(symbol)}
-                                disabled={loading[symbol] || isNewsTime}
-                                className={`w-full py-2 px-4 rounded-md transition duration-200 ease-in-out ${loading[symbol] || isNewsTime
+                                disabled={loading[symbol]}
+                                className={`w-full py-2 px-4 rounded-md transition duration-200 ease-in-out ${loading[symbol]
                                     ? "bg-gray-300 cursor-not-allowed text-gray-500"
                                     : "bg-blue-500 hover:bg-blue-600 text-white shadow-sm"
                                     }`}
@@ -772,4 +726,4 @@ export const TradingSignals = ({ symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", 
             </div>
         </div>
     );
-}
+};

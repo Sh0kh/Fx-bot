@@ -1,9 +1,9 @@
-import { TradingSignals } from "./BinanceTred";
+import { TradingSignals } from "./FxTreding";
 
 export default function Home() {
     return (
         <div>
-            <TradingSignals symbols={["BTC/USD", "ETH/USD", "BNB/USD", "SOL/USD", "XRP/USD"]} />
+            <TradingSignals symbols={["EUR/:FX", "GBP/JPY:FX",]} />
         </div>
     )
 }

@@ -5,6 +5,7 @@ import MainLayout from "./layouts/MainLayout";
 import Home from "./Pages/Home";
 import AdminLayout from "./layouts/AdminLayout";
 import ProtectedRoute from "./Components/ProtectedRoute"; // Импорт компонента защиты маршрутов
+import Crypto from "./Pages/Crypto";
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
           </Route>
           <Route element={<MainLayout />}>
             <Route index element={<Home />} />
+            <Route path='/crypto' element={<Crypto />} />
           </Route>
         </Route>
       </Routes>
